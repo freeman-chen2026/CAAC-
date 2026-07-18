@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import json
-from io import BytesIO
 
-# ---------- 1. 构建飞机注册号 → 机型 映射 ----------
+# ---------- 1. 构建飞机注册号 → 机型映射 ----------
 def build_actype_mapping():
     mapping_text = """GL5T T73338/N2QE
 GLEX T7CJK/MLLIN/B8105/N7777U
@@ -46,7 +45,8 @@ def process_excel(df, actype_mapping):
         # ---- 机型（通过映射） ----
         actype = actype_mapping.get(reg, '')
         if not actype:
-            st.warning(f"未找到注册号 '{reg}' 对应的机型，请手动补充映射表或检查注册号是否准确。")
+            # 这里用 st.warning 但在处理函数中可能不适合，改为记录日志或返回信息，此处先保留但不影响
+            st.warning(f"未找到注册号 '{reg}' 对应的机型，请手动补充映射表。")
 
         # ---- 出发日期 ----
         date_val = row.get('出发日期')
@@ -55,10 +55,6 @@ def process_excel(df, actype_mapping):
                 date_str = date_val.strftime('%Y-%m-%d')
             else:
                 date_str = str(date_val).strip()
-                try:
-                    pd.to_datetime(date_str)  # 验证是否为有效日期
-                except:
-                    pass  # 保持原样
         else:
             date_str = ''
 
@@ -105,15 +101,11 @@ def process_excel(df, actype_mapping):
 
 # ---------- 3. 生成 JavaScript 自动化脚本 ----------
 def generate_js_script(flights):
-    # 将航班数据转为 JSON 数组（用于 JS）
     flights_json = json.dumps(flights, ensure_ascii=False, indent=2)
-
     script = f"""
 (function() {{
-    // ---------- 从 Excel 提取的航班数据 ----------
     const flights = {flights_json};
 
-    // ---------- 工具：等待元素出现 ----------
     function waitForElement(selector, timeout) {{
         return new Promise((resolve, reject) => {{
             const start = Date.now();
@@ -130,7 +122,6 @@ def generate_js_script(flights):
         }});
     }}
 
-    // ---------- 查找“新增”按钮 ----------
     function findAddButton() {{
         const selectors = [
             'a.mini-button .mini-button-text',
@@ -148,7 +139,6 @@ def generate_js_script(flights):
         return null;
     }}
 
-    // ---------- 处理单个航班 ----------
     async function processFlight(index) {{
         if (index >= flights.length) {{
             console.log('✅ 所有航班录入完成！');
@@ -156,15 +146,13 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
-        // 1. 点击新增
         const addBtn = findAddButton();
         if (!addBtn) {{
-            console.error('❌ 找不到“新增”按钮，请确认页面已加载。');
+            console.error('❌ 找不到“新增”按钮');
             return;
         }}
         addBtn.click();
 
-        // 2. 等待新增表单出现（以注册号输入框为标志）
         try {{
             await waitForElement('#FLIGHTID_ADD$text', 5000);
         }} catch (e) {{
@@ -172,7 +160,6 @@ def generate_js_script(flights):
             return;
         }}
 
-        // 3. 填充字段（触发 input 事件以便框架感知）
         const setValue = (id, value) => {{
             const el = document.getElementById(id);
             if (el) {{
@@ -181,22 +168,20 @@ def generate_js_script(flights):
             }}
         }};
 
-        setValue('MPROPERTY_ADD$text', flight.nature);      // 飞行性质
-        setValue('FLIGHTID_ADD$text', flight.reg);          // 航班号（注册号）
-        setValue('REGNUM_ADD$text', flight.reg);            // 注册号
-        setValue('ACTYPE_ADD$text', flight.actype);         // 机型
-        setValue('EDATE_ADD$text', flight.date);            // 出发日期
-        // 同步隐藏域
+        setValue('MPROPERTY_ADD$text', flight.nature);
+        setValue('FLIGHTID_ADD$text', flight.reg);
+        setValue('REGNUM_ADD$text', flight.reg);
+        setValue('ACTYPE_ADD$text', flight.actype);
+        setValue('EDATE_ADD$text', flight.date);
         const dateHidden = document.getElementById('EDATE_ADD$value');
         if (dateHidden) dateHidden.value = flight.date;
-        setValue('DEPAP_ADD$text', flight.depap);           // 出发地
-        setValue('DEPTIME_ADD$text', flight.deptime);       // 计划出发时间
-        setValue('ARRTIME_ADD$text', flight.arrtime);       // 预计到达时间
-        setValue('ARRAP_ADD$text', flight.arrap);           // 到达地
+        setValue('DEPAP_ADD$text', flight.depap);
+        setValue('DEPTIME_ADD$text', flight.deptime);
+        setValue('ARRTIME_ADD$text', flight.arrtime);
+        setValue('ARRAP_ADD$text', flight.arrap);
 
-        // 4. 等待用户手动点击“保存”，然后继续
         const userConfirmed = confirm(
-            `航班 ${index+1}/${flights.length} 已填充完成。\\n请点击“保存”按钮，然后点击“确定”继续下一个。`
+            `航班 ${{index+1}}/${{flights.length}} 已填充完成。\\n请点击“保存”按钮，然后点击“确定”继续下一个。`
         );
         if (userConfirmed) {{
             processFlight(index + 1);
@@ -205,7 +190,6 @@ def generate_js_script(flights):
         }}
     }}
 
-    // ---------- 启动 ----------
     processFlight(0);
 }})();
 """
@@ -225,12 +209,11 @@ def main():
             st.subheader("📋 数据预览（前 10 行）")
             st.dataframe(df.head(10))
 
-            # 构建映射并处理数据
             actype_mapping = build_actype_mapping()
             flights = process_excel(df, actype_mapping)
 
             if not flights:
-                st.error("❌ 未提取到任何有效航班数据，请检查 Excel 格式是否正确（必须包含：航班号、飞机注册号、用途、出发日期、计划出发、预计到达、出发地、到达地）。")
+                st.error("❌ 未提取到任何有效航班数据，请检查 Excel 格式是否正确。")
             else:
                 st.success(f"✅ 成功提取 {len(flights)} 个航班记录。")
                 st.subheader("📌 解析后的航班列表")
