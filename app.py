@@ -106,7 +106,6 @@ def generate_js_script(flights):
     let currentIndex = 0;
     let waitingForGo = false;
 
-    // 全局函数，用于继续下一个航班
     window.go = function() {{
         if (waitingForGo) {{
             waitingForGo = false;
@@ -163,6 +162,28 @@ def generate_js_script(flights):
         return null;
     }}
 
+    // 增强版 setValue，优先使用 MiniUI 的 API
+    function setValue(id, value) {{
+        // 1. 尝试通过 MiniUI 的 mini.get 方法设置
+        if (typeof mini !== 'undefined' && mini.get) {{
+            const control = mini.get(id);
+            if (control) {{
+                control.setValue(value);
+                // 触发值改变事件
+                if (control.doValueChanged) control.doValueChanged();
+                return;
+            }}
+        }}
+        // 2. 降级：直接操作 DOM 并触发多种事件
+        const el = document.getElementById(id);
+        if (el) {{
+            el.value = value;
+            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+        }}
+    }}
+
     async function processFlight(index) {{
         if (index >= flights.length) {{
             console.log('✅ 所有航班录入完成！');
@@ -189,19 +210,13 @@ def generate_js_script(flights):
             return;
         }}
 
-        const setValue = (id, value) => {{
-            const el = document.getElementById(id);
-            if (el) {{
-                el.value = value;
-                el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            }}
-        }};
-
+        // 填充所有字段
         setValue('MPROPERTY_ADD$text', flight.nature);
         setValue('FLIGHTID_ADD$text', flight.reg);
         setValue('REGNUM_ADD$text', flight.reg);
         setValue('ACTYPE_ADD$text', flight.actype);
         setValue('EDATE_ADD$text', flight.date);
+        // 同步日期隐藏值
         const dateHidden = document.getElementById('EDATE_ADD$value');
         if (dateHidden) dateHidden.value = flight.date;
         setValue('DEPAP_ADD$text', flight.depap);
@@ -212,7 +227,6 @@ def generate_js_script(flights):
         console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完成。`);
         console.log(`📌 请点击页面上的“保存”按钮，保存后在控制台输入 go() 继续下一个航班。`);
 
-        // 等待用户输入 go()
         waitingForGo = true;
         await new Promise((resolve) => {{
             const check = setInterval(() => {{
@@ -223,7 +237,6 @@ def generate_js_script(flights):
             }}, 200);
         }});
 
-        // 用户已输入 go()，继续下一个
         processFlight(index + 1);
     }}
 
