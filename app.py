@@ -253,16 +253,16 @@ def main():
             else:
                 st.success(f"✅ 成功提取 {len(flights)} 个航班记录。")
                 
-                if st.button("🚀 生成 JavaScript 脚本"):
-                    script = generate_js_script(flights)
-                    st.subheader("📜 生成的脚本（复制到浏览器控制台运行）")
-                    st.code(script, language="javascript")
-                    st.download_button(
-                        label="⬇️ 下载脚本（.js）",
-                        data=script,
-                        file_name="flight_auto_fill.js",
-                        mime="application/javascript"
-                    )
+                # 直接生成并显示脚本，无需点击按钮
+                script = generate_js_script(flights)
+                st.subheader("📜 生成的脚本（复制到浏览器控制台运行）")
+                st.code(script, language="javascript")
+                st.download_button(
+                    label="⬇️ 下载脚本（.js）",
+                    data=script,
+                    file_name="flight_auto_fill.js",
+                    mime="application/javascript"
+                )
 
         except Exception as e:
             st.error(f"读取文件失败：{e}")
