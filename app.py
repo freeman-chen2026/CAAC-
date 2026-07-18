@@ -28,15 +28,13 @@ F900 N577QT"""
 # ---------- 2. 解析 Excel 数据 ----------
 def process_excel(df, actype_mapping):
     flights = []
-    # 去除列名两端空格
     df.columns = df.columns.str.strip()
     
-    # ----- 调试信息：显示实际读取到的列名 -----
+    # 调试信息（显示列名）
     st.write("📌 **读取到的列名：**", df.columns.tolist())
     st.write("📌 **数据预览（前3行）：**")
     st.dataframe(df.head(3))
     
-    # 检查关键列是否存在
     required_cols = ['航班号', '飞机注册号', '用途', '出发日期', '计划出发', '预计到达', '出发地', '到达地']
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -44,23 +42,17 @@ def process_excel(df, actype_mapping):
         return flights
     
     for idx, row in df.iterrows():
-        # 跳过空行（如果航班号为空或NaN）
         if pd.isna(row.get('航班号')):
             continue
         
-        # ---- 飞行性质 ----
         purpose = str(row.get('用途', '')).strip()
         nature = '调机飞行' if ('调机' in purpose or '维修' in purpose) else '公务飞行'
         
-        # ---- 飞机注册号 ----
         reg = str(row.get('飞机注册号', '')).strip()
-        
-        # ---- 机型（通过映射） ----
         actype = actype_mapping.get(reg, '')
         if not actype:
             st.warning(f"未找到注册号 '{reg}' 对应的机型，请手动补充映射表。")
         
-        # ---- 出发日期 ----
         date_val = row.get('出发日期')
         if pd.notna(date_val):
             if isinstance(date_val, pd.Timestamp):
@@ -70,7 +62,6 @@ def process_excel(df, actype_mapping):
         else:
             date_str = ''
         
-        # ---- 计划出发时间 (HH:MM → HHMM) ----
         dep_time_val = row.get('计划出发')
         if pd.notna(dep_time_val):
             t = str(dep_time_val).strip()
@@ -82,7 +73,6 @@ def process_excel(df, actype_mapping):
         else:
             deptime = ''
         
-        # ---- 预计到达时间 (HH:MM → HHMM) ----
         arr_time_val = row.get('预计到达')
         if pd.notna(arr_time_val):
             t = str(arr_time_val).strip()
@@ -94,7 +84,6 @@ def process_excel(df, actype_mapping):
         else:
             arrtime = ''
         
-        # ---- 起降机场（四字码） ----
         depap = str(row.get('出发地', '')).strip() if pd.notna(row.get('出发地')) else ''
         arrap = str(row.get('到达地', '')).strip() if pd.notna(row.get('到达地')) else ''
         
@@ -112,24 +101,25 @@ def process_excel(df, actype_mapping):
     
     return flights
 
-# ---------- 3. 生成 JavaScript 自动化脚本 ----------
+# ---------- 3. 生成 JavaScript 自动化脚本（修复了选择器错误） ----------
 def generate_js_script(flights):
     flights_json = json.dumps(flights, ensure_ascii=False, indent=2)
     script = f"""
 (function() {{
     const flights = {flights_json};
 
-    function waitForElement(selector, timeout) {{
+    // 等待指定 ID 的元素出现（直接使用 getElementById）
+    function waitForElement(id, timeout) {{
         return new Promise((resolve, reject) => {{
             const start = Date.now();
             const interval = setInterval(() => {{
-                const el = document.querySelector(selector);
+                const el = document.getElementById(id);
                 if (el) {{
                     clearInterval(interval);
                     resolve(el);
                 }} else if (Date.now() - start > timeout) {{
                     clearInterval(interval);
-                    reject(new Error('等待元素超时: ' + selector));
+                    reject(new Error('等待元素超时: ' + id));
                 }}
             }}, 200);
         }});
@@ -167,7 +157,8 @@ def generate_js_script(flights):
         addBtn.click();
 
         try {{
-            await waitForElement('#FLIGHTID_ADD$text', 5000);
+            // 等待第一个输入框出现（使用 ID）
+            await waitForElement('FLIGHTID_ADD$text', 5000);
         }} catch (e) {{
             console.error('❌ 新增表单未加载', e);
             return;
@@ -218,7 +209,7 @@ def main():
 
     if uploaded_file is not None:
         try:
-            # 🔥 关键修复：header=1 表示第二行作为表头（跳过第一行空行）
+            # 指定第二行为表头，跳过第一行空行
             df = pd.read_excel(uploaded_file, sheet_name=0, header=1)
             st.subheader("📋 数据预览（前 10 行）")
             st.dataframe(df.head(10))
