@@ -30,7 +30,6 @@ def process_excel(df, actype_mapping):
     flights = []
     df.columns = df.columns.str.strip()
     
-    # 调试信息（显示列名）
     st.write("📌 **读取到的列名：**", df.columns.tolist())
     st.write("📌 **数据预览（前3行）：**")
     st.dataframe(df.head(3))
@@ -101,14 +100,13 @@ def process_excel(df, actype_mapping):
     
     return flights
 
-# ---------- 3. 生成 JavaScript 自动化脚本（修复了选择器错误） ----------
+# ---------- 3. 生成 JavaScript 自动化脚本（增强版 findAddButton） ----------
 def generate_js_script(flights):
     flights_json = json.dumps(flights, ensure_ascii=False, indent=2)
     script = f"""
 (function() {{
     const flights = {flights_json};
 
-    // 等待指定 ID 的元素出现（直接使用 getElementById）
     function waitForElement(id, timeout) {{
         return new Promise((resolve, reject) => {{
             const start = Date.now();
@@ -125,20 +123,46 @@ def generate_js_script(flights):
         }});
     }}
 
+    // 增强版查找“新增”按钮
     function findAddButton() {{
-        const selectors = [
-            'a.mini-button .mini-button-text',
-            'span.mini-button-text',
-            'a[href="javascript:void(0)"] .mini-button-text'
-        ];
-        for (let sel of selectors) {{
-            const btns = document.querySelectorAll(sel);
-            for (let btn of btns) {{
-                if (btn.innerText.trim() === '新增') {{
-                    return btn.closest('a') || btn;
-                }}
+        // 策略1：通过常见的类名和文本
+        const candidates = document.querySelectorAll('a.mini-button, span.mini-button-text, .mini-button');
+        for (let el of candidates) {{
+            let text = el.innerText || el.textContent || '';
+            if (text.trim() === '新增') {{
+                // 如果是 span，返回其父级 a 标签，确保能点击
+                let btn = el.closest('a');
+                if (btn) return btn;
+                // 如果没有 a，尝试查找可点击的父级
+                let parent = el.closest('[onclick]') || el.closest('[role="button"]') || el;
+                return parent;
             }}
         }}
+
+        // 策略2：通过 XPath 直接匹配包含“新增”的链接
+        const xpath = "//a[.//span[text()='新增'] or .//span[contains(text(),'新增')]] | //*[@class='mini-button-text' and text()='新增']";
+        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        if (result.singleNodeValue) {{
+            let btn = result.singleNodeValue;
+            // 如果找到的是 span，尝试取父级 a
+            if (btn.tagName.toLowerCase() === 'span') {{
+                let a = btn.closest('a');
+                if (a) return a;
+            }}
+            return btn;
+        }}
+
+        // 策略3：查找所有包含“新增”文字的任意元素，并取最近的 a 或可点击元素
+        const allEls = document.querySelectorAll('*');
+        for (let el of allEls) {{
+            if (el.innerText && el.innerText.trim() === '新增' && el.tagName !== 'BODY') {{
+                let a = el.closest('a');
+                if (a) return a;
+                // 如果没有 a，但本身可点击
+                if (el.onclick || el.getAttribute('role') === 'button') return el;
+            }}
+        }}
+
         return null;
     }}
 
@@ -149,15 +173,21 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
-        const addBtn = findAddButton();
+        // 多次尝试点击“新增”（有些页面需要等待）
+        let addBtn = null;
+        for (let attempt = 0; attempt < 5; attempt++) {{
+            addBtn = findAddButton();
+            if (addBtn) break;
+            await new Promise(r => setTimeout(r, 300));
+        }}
         if (!addBtn) {{
-            console.error('❌ 找不到“新增”按钮');
+            console.error('❌ 经过多次尝试仍找不到“新增”按钮，请确认页面已加载且无遮罩。');
+            console.log('💡 提示：请手动关闭可能存在的弹窗或提示框，然后重新运行脚本。');
             return;
         }}
         addBtn.click();
 
         try {{
-            // 等待第一个输入框出现（使用 ID）
             await waitForElement('FLIGHTID_ADD$text', 5000);
         }} catch (e) {{
             console.error('❌ 新增表单未加载', e);
@@ -209,7 +239,6 @@ def main():
 
     if uploaded_file is not None:
         try:
-            # 指定第二行为表头，跳过第一行空行
             df = pd.read_excel(uploaded_file, sheet_name=0, header=1)
             st.subheader("📋 数据预览（前 10 行）")
             st.dataframe(df.head(10))
