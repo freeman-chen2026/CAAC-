@@ -103,17 +103,8 @@ def generate_js_script(flights):
     script = f"""
 (function() {{
     const flights = {flights_json};
-    let currentIndex = 0;
-    let waitingForGo = false;
 
-    window.go = function() {{
-        if (waitingForGo) {{
-            waitingForGo = false;
-        }} else {{
-            console.log('⏳ 当前没有等待的航班，请先运行脚本。');
-        }}
-    }};
-
+    // 通用等待元素（通过 ID）
     function waitForElement(id, timeout) {{
         return new Promise((resolve, reject) => {{
             const start = Date.now();
@@ -130,51 +121,36 @@ def generate_js_script(flights):
         }});
     }}
 
-    function findAddButton() {{
-        const candidates = document.querySelectorAll('a.mini-button, span.mini-button-text, .mini-button');
+    // 查找包含指定文本的按钮（不区分大小写）
+    function findButtonByText(text) {{
+        const candidates = document.querySelectorAll('a, button, span, div, input[type="button"], input[type="submit"]');
         for (let el of candidates) {{
-            let text = el.innerText || el.textContent || '';
-            if (text.trim() === '新增') {{
-                let btn = el.closest('a');
-                if (btn) return btn;
-                let parent = el.closest('[onclick]') || el.closest('[role="button"]') || el;
-                return parent;
+            let txt = el.innerText || el.textContent || el.value || '';
+            if (txt.trim() === text) {{
+                let btn = el.closest('a') || el.closest('button') || el;
+                return btn;
             }}
         }}
-        const xpath = "//a[.//span[text()='新增'] or .//span[contains(text(),'新增')]] | //*[@class='mini-button-text' and text()='新增']";
+        // XPath 兜底
+        const xpath = "//*[normalize-space(text())='" + text + "' or normalize-space(@value)='" + text + "']";
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         if (result.singleNodeValue) {{
-            let btn = result.singleNodeValue;
-            if (btn.tagName.toLowerCase() === 'span') {{
-                let a = btn.closest('a');
-                if (a) return a;
-            }}
-            return btn;
-        }}
-        const allEls = document.querySelectorAll('*');
-        for (let el of allEls) {{
-            if (el.innerText && el.innerText.trim() === '新增' && el.tagName !== 'BODY') {{
-                let a = el.closest('a');
-                if (a) return a;
-                if (el.onclick || el.getAttribute('role') === 'button') return el;
-            }}
+            let el = result.singleNodeValue;
+            return el.closest('a') || el.closest('button') || el;
         }}
         return null;
     }}
 
-    // 增强版 setValue，优先使用 MiniUI 的 API
+    // 增强版 setValue，优先使用 MiniUI
     function setValue(id, value) {{
-        // 1. 尝试通过 MiniUI 的 mini.get 方法设置
         if (typeof mini !== 'undefined' && mini.get) {{
             const control = mini.get(id);
             if (control) {{
                 control.setValue(value);
-                // 触发值改变事件
                 if (control.doValueChanged) control.doValueChanged();
                 return;
             }}
         }}
-        // 2. 降级：直接操作 DOM 并触发多种事件
         const el = document.getElementById(id);
         if (el) {{
             el.value = value;
@@ -184,6 +160,23 @@ def generate_js_script(flights):
         }}
     }}
 
+    // 等待保存完成（检测“新增”按钮再次变为可用，或弹窗消失）
+    async function waitForSaveComplete() {{
+        // 等待“新增”按钮重新出现且可点击（最多等待20秒）
+        for (let attempt = 0; attempt < 40; attempt++) {{
+            const addBtn = findButtonByText('新增');
+            if (addBtn && !addBtn.disabled && addBtn.style.display !== 'none') {{
+                // 额外检查是否有遮罩（有些系统保存后会遮罩）
+                const mask = document.querySelector('.mini-mask, .ui-widget-overlay, .modal-backdrop');
+                if (!mask || mask.style.display === 'none') {{
+                    return true;
+                }}
+            }}
+            await new Promise(r => setTimeout(r, 500));
+        }}
+        return false;
+    }}
+
     async function processFlight(index) {{
         if (index >= flights.length) {{
             console.log('✅ 所有航班录入完成！');
@@ -191,18 +184,20 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
+        // 1. 点击“新增”
         let addBtn = null;
         for (let attempt = 0; attempt < 5; attempt++) {{
-            addBtn = findAddButton();
+            addBtn = findButtonByText('新增');
             if (addBtn) break;
             await new Promise(r => setTimeout(r, 300));
         }}
         if (!addBtn) {{
-            console.error('❌ 找不到“新增”按钮，请确认页面已加载且无遮罩。');
+            console.error('❌ 找不到“新增”按钮，停止执行。');
             return;
         }}
         addBtn.click();
 
+        // 2. 等待表单加载
         try {{
             await waitForElement('FLIGHTID_ADD$text', 5000);
         }} catch (e) {{
@@ -210,13 +205,12 @@ def generate_js_script(flights):
             return;
         }}
 
-        // 填充所有字段
+        // 3. 填充字段
         setValue('MPROPERTY_ADD$text', flight.nature);
         setValue('FLIGHTID_ADD$text', flight.reg);
         setValue('REGNUM_ADD$text', flight.reg);
         setValue('ACTYPE_ADD$text', flight.actype);
         setValue('EDATE_ADD$text', flight.date);
-        // 同步日期隐藏值
         const dateHidden = document.getElementById('EDATE_ADD$value');
         if (dateHidden) dateHidden.value = flight.date;
         setValue('DEPAP_ADD$text', flight.depap);
@@ -224,23 +218,21 @@ def generate_js_script(flights):
         setValue('ARRTIME_ADD$text', flight.arrtime);
         setValue('ARRAP_ADD$text', flight.arrap);
 
-        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完成。`);
-        console.log(`📌 请点击页面上的“保存”按钮，保存后在控制台输入 go() 继续下一个航班。`);
+        console.log(`✅ 航班 ${index+1}/${flights.length} 已填充完毕。请人工检查并点击“保存”按钮。`);
 
-        waitingForGo = true;
-        await new Promise((resolve) => {{
-            const check = setInterval(() => {{
-                if (!waitingForGo) {{
-                    clearInterval(check);
-                    resolve();
-                }}
-            }}, 200);
-        }});
+        // 4. 等待用户手动点击“保存”，并检测保存完成
+        const saveCompleted = await waitForSaveComplete();
+        if (!saveCompleted) {{
+            console.warn('⚠️ 未检测到保存完成，可能“新增”按钮未恢复。但会尝试继续下一个航班。');
+        }} else {{
+            console.log(`✅ 航班 ${index+1} 保存完成。`);
+        }}
 
+        // 5. 继续下一个航班
         processFlight(index + 1);
     }}
 
-    console.log('🚀 脚本已启动，即将开始第一个航班...');
+    console.log('🚀 脚本已启动。填充后请人工检查并点击“保存”，脚本会自动识别并继续。');
     processFlight(0);
 }})();
 """
