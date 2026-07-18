@@ -138,15 +138,23 @@ def generate_js_script(flights):
         return null;
     }}
 
+    // 增强设置值
     function setValue(id, value) {{
+        // 尝试 MiniUI
         if (typeof mini !== 'undefined' && mini.get) {{
-            const control = mini.get(id);
+            let controlId = id;
+            if (id.endsWith('$text')) {{
+                controlId = id.slice(0, -5);
+            }}
+            const control = mini.get(controlId);
             if (control) {{
                 control.setValue(value);
                 if (control.doValueChanged) control.doValueChanged();
+                if (control.fireEvent) control.fireEvent('valuechanged', {{ sender: control, value: value }});
                 return;
             }}
         }}
+        // 降级
         const el = document.getElementById(id);
         if (el) {{
             el.value = value;
@@ -156,6 +164,42 @@ def generate_js_script(flights):
         }}
     }}
 
+    // 等待保存完成：检测“保存”按钮重新变为可用，或等待固定时间，或检测弹窗
+    async function waitForSaveComplete() {{
+        // 先等待1秒让保存动作触发
+        await new Promise(r => setTimeout(r, 1000));
+        // 最多等待10秒
+        for (let attempt = 0; attempt < 20; attempt++) {{
+            // 检查是否有弹窗出现（如 mini-messagebox）
+            const msgBox = document.querySelector('.mini-messagebox, .ui-dialog, .modal-content, .alert');
+            if (msgBox && msgBox.style.display !== 'none') {{
+                // 尝试点击“确定”或“关闭”按钮
+                const okBtn = msgBox.querySelector('button, .mini-button') || 
+                              findButtonByText('确定') || findButtonByText('关闭');
+                if (okBtn) {{
+                    okBtn.click();
+                    console.log('🔄 已自动关闭保存成功弹窗。');
+                    await new Promise(r => setTimeout(r, 500)); // 等待弹窗关闭
+                }}
+                // 继续等待可能出现的其他弹窗
+                continue;
+            }}
+            // 检查“保存”按钮是否变为可用（原来可能被禁用）
+            const saveBtn = findButtonByText('保存');
+            if (saveBtn && !saveBtn.disabled && saveBtn.style.display !== 'none') {{
+                // 但可能一直可用，所以再检查是否有“新增”按钮可见（表示已回到列表）
+                const addBtn = findButtonByText('新增');
+                if (addBtn && addBtn.style.display !== 'none') {{
+                    return true;
+                }}
+            }}
+            await new Promise(r => setTimeout(r, 500));
+        }}
+        // 超时后仍继续，避免卡死
+        console.warn('⚠️ 未检测到保存完成，但继续下一航班。');
+        return true;
+    }}
+
     async function processFlight(index) {{
         if (index >= flights.length) {{
             console.log('✅ 所有航班录入完成！');
@@ -163,6 +207,7 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
+        // 点击新增
         let addBtn = null;
         for (let attempt = 0; attempt < 5; attempt++) {{
             addBtn = findButtonByText('新增');
@@ -182,6 +227,7 @@ def generate_js_script(flights):
             return;
         }}
 
+        // 填充
         setValue('MPROPERTY_ADD$text', flight.nature);
         setValue('FLIGHTID_ADD$text', flight.reg);
         setValue('REGNUM_ADD$text', flight.reg);
@@ -194,17 +240,29 @@ def generate_js_script(flights):
         setValue('ARRTIME_ADD$text', flight.arrtime);
         setValue('ARRAP_ADD$text', flight.arrap);
 
-        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完毕。请检查并点击“保存”。`);
-        console.log(`📌 完成后，按 Enter 键（或点击“确定”）继续下一个航班。`);
+        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充，正在自动保存...`);
 
-        // 使用 prompt，默认值为空，用户只需按 Enter 即可
-        prompt(`航班 ${{index+1}}/${{flights.length}} 已填充完毕。\\n请点击“保存”按钮，然后按 Enter 键继续。`, '');
+        // 点击保存
+        let saveBtn = null;
+        for (let attempt = 0; attempt < 3; attempt++) {{
+            saveBtn = findButtonByText('保存');
+            if (saveBtn) break;
+            await new Promise(r => setTimeout(r, 300));
+        }}
+        if (saveBtn) {{
+            saveBtn.click();
+            console.log('💾 已点击保存。');
+            // 等待保存完成
+            await waitForSaveComplete();
+        }} else {{
+            console.warn('⚠️ 未找到“保存”按钮，跳过此航班。');
+        }}
 
-        // 继续下一个航班
+        // 继续下一个
         processFlight(index + 1);
     }}
 
-    console.log('🚀 脚本已启动。填充后请人工检查并点击“保存”，然后按 Enter 键继续。');
+    console.log('🚀 全自动脚本已启动（自动点击保存）。请勿操作，等待完成。');
     processFlight(0);
 }})();
 """
