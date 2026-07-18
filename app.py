@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 
+# ---------- 1. 飞机注册号 → 机型映射 ----------
 def build_actype_mapping():
     mapping_text = """GL5T T73338/N2QE
 GLEX T7CJK/MLLIN/B8105/N7777U
@@ -24,6 +25,7 @@ F900 N577QT"""
             mapping[reg.strip()] = actype
     return mapping
 
+# ---------- 2. 解析 Excel ----------
 def process_excel(df, actype_mapping):
     flights = []
     df.columns = df.columns.str.strip()
@@ -38,7 +40,7 @@ def process_excel(df, actype_mapping):
         st.error(f"❌ 缺少以下必需列：{missing}。请检查 Excel 表头是否正确。")
         return flights
     
-    for idx, row in df.iterrows():
+    for idx, row in df.iterrows():   # idx 是行索引，但我们不使用它，只用于循环
         if pd.isna(row.get('航班号')):
             continue
         
@@ -98,13 +100,13 @@ def process_excel(df, actype_mapping):
     
     return flights
 
+# ---------- 3. 生成 JavaScript 脚本 ----------
 def generate_js_script(flights):
     flights_json = json.dumps(flights, ensure_ascii=False, indent=2)
     script = f"""
 (function() {{
     const flights = {flights_json};
 
-    // 通用等待元素（通过 ID）
     function waitForElement(id, timeout) {{
         return new Promise((resolve, reject) => {{
             const start = Date.now();
@@ -121,7 +123,6 @@ def generate_js_script(flights):
         }});
     }}
 
-    // 查找包含指定文本的按钮（不区分大小写）
     function findButtonByText(text) {{
         const candidates = document.querySelectorAll('a, button, span, div, input[type="button"], input[type="submit"]');
         for (let el of candidates) {{
@@ -131,7 +132,6 @@ def generate_js_script(flights):
                 return btn;
             }}
         }}
-        // XPath 兜底
         const xpath = "//*[normalize-space(text())='" + text + "' or normalize-space(@value)='" + text + "']";
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         if (result.singleNodeValue) {{
@@ -141,7 +141,6 @@ def generate_js_script(flights):
         return null;
     }}
 
-    // 增强版 setValue，优先使用 MiniUI
     function setValue(id, value) {{
         if (typeof mini !== 'undefined' && mini.get) {{
             const control = mini.get(id);
@@ -160,13 +159,10 @@ def generate_js_script(flights):
         }}
     }}
 
-    // 等待保存完成（检测“新增”按钮再次变为可用，或弹窗消失）
     async function waitForSaveComplete() {{
-        // 等待“新增”按钮重新出现且可点击（最多等待20秒）
         for (let attempt = 0; attempt < 40; attempt++) {{
             const addBtn = findButtonByText('新增');
             if (addBtn && !addBtn.disabled && addBtn.style.display !== 'none') {{
-                // 额外检查是否有遮罩（有些系统保存后会遮罩）
                 const mask = document.querySelector('.mini-mask, .ui-widget-overlay, .modal-backdrop');
                 if (!mask || mask.style.display === 'none') {{
                     return true;
@@ -184,7 +180,6 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
-        // 1. 点击“新增”
         let addBtn = null;
         for (let attempt = 0; attempt < 5; attempt++) {{
             addBtn = findButtonByText('新增');
@@ -197,7 +192,6 @@ def generate_js_script(flights):
         }}
         addBtn.click();
 
-        // 2. 等待表单加载
         try {{
             await waitForElement('FLIGHTID_ADD$text', 5000);
         }} catch (e) {{
@@ -205,7 +199,6 @@ def generate_js_script(flights):
             return;
         }}
 
-        // 3. 填充字段
         setValue('MPROPERTY_ADD$text', flight.nature);
         setValue('FLIGHTID_ADD$text', flight.reg);
         setValue('REGNUM_ADD$text', flight.reg);
@@ -218,17 +211,15 @@ def generate_js_script(flights):
         setValue('ARRTIME_ADD$text', flight.arrtime);
         setValue('ARRAP_ADD$text', flight.arrap);
 
-        console.log(`✅ 航班 ${index+1}/${flights.length} 已填充完毕。请人工检查并点击“保存”按钮。`);
+        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完毕。请人工检查并点击“保存”按钮。`);
 
-        // 4. 等待用户手动点击“保存”，并检测保存完成
         const saveCompleted = await waitForSaveComplete();
         if (!saveCompleted) {{
             console.warn('⚠️ 未检测到保存完成，可能“新增”按钮未恢复。但会尝试继续下一个航班。');
         }} else {{
-            console.log(`✅ 航班 ${index+1} 保存完成。`);
+            console.log(`✅ 航班 ${{index+1}} 保存完成。`);
         }}
 
-        // 5. 继续下一个航班
         processFlight(index + 1);
     }}
 
@@ -238,6 +229,7 @@ def generate_js_script(flights):
 """
     return script
 
+# ---------- 4. Streamlit 主界面 ----------
 def main():
     st.set_page_config(page_title="飞行计划录入脚本生成器", layout="wide")
     st.title("✈️ 飞行计划录入脚本生成器")
