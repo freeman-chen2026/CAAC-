@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import json
 
-# ---------- 1. 飞机注册号 → 机型映射 ----------
 def build_actype_mapping():
     mapping_text = """GL5T T73338/N2QE
 GLEX T7CJK/MLLIN/B8105/N7777U
@@ -25,7 +24,6 @@ F900 N577QT"""
             mapping[reg.strip()] = actype
     return mapping
 
-# ---------- 2. 解析 Excel ----------
 def process_excel(df, actype_mapping):
     flights = []
     df.columns = df.columns.str.strip()
@@ -40,7 +38,7 @@ def process_excel(df, actype_mapping):
         st.error(f"❌ 缺少以下必需列：{missing}。请检查 Excel 表头是否正确。")
         return flights
     
-    for idx, row in df.iterrows():   # idx 是行索引，但我们不使用它，只用于循环
+    for idx, row in df.iterrows():
         if pd.isna(row.get('航班号')):
             continue
         
@@ -100,7 +98,6 @@ def process_excel(df, actype_mapping):
     
     return flights
 
-# ---------- 3. 生成 JavaScript 脚本 ----------
 def generate_js_script(flights):
     flights_json = json.dumps(flights, ensure_ascii=False, indent=2)
     script = f"""
@@ -159,20 +156,6 @@ def generate_js_script(flights):
         }}
     }}
 
-    async function waitForSaveComplete() {{
-        for (let attempt = 0; attempt < 40; attempt++) {{
-            const addBtn = findButtonByText('新增');
-            if (addBtn && !addBtn.disabled && addBtn.style.display !== 'none') {{
-                const mask = document.querySelector('.mini-mask, .ui-widget-overlay, .modal-backdrop');
-                if (!mask || mask.style.display === 'none') {{
-                    return true;
-                }}
-            }}
-            await new Promise(r => setTimeout(r, 500));
-        }}
-        return false;
-    }}
-
     async function processFlight(index) {{
         if (index >= flights.length) {{
             console.log('✅ 所有航班录入完成！');
@@ -211,25 +194,22 @@ def generate_js_script(flights):
         setValue('ARRTIME_ADD$text', flight.arrtime);
         setValue('ARRAP_ADD$text', flight.arrap);
 
-        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完毕。请人工检查并点击“保存”按钮。`);
+        console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充完毕。请检查并点击“保存”。`);
+        console.log(`📌 完成后，按 Enter 键（或点击“确定”）继续下一个航班。`);
 
-        const saveCompleted = await waitForSaveComplete();
-        if (!saveCompleted) {{
-            console.warn('⚠️ 未检测到保存完成，可能“新增”按钮未恢复。但会尝试继续下一个航班。');
-        }} else {{
-            console.log(`✅ 航班 ${{index+1}} 保存完成。`);
-        }}
+        // 使用 prompt，默认值为空，用户只需按 Enter 即可
+        prompt(`航班 ${{index+1}}/${{flights.length}} 已填充完毕。\\n请点击“保存”按钮，然后按 Enter 键继续。`, '');
 
+        // 继续下一个航班
         processFlight(index + 1);
     }}
 
-    console.log('🚀 脚本已启动。填充后请人工检查并点击“保存”，脚本会自动识别并继续。');
+    console.log('🚀 脚本已启动。填充后请人工检查并点击“保存”，然后按 Enter 键继续。');
     processFlight(0);
 }})();
 """
     return script
 
-# ---------- 4. Streamlit 主界面 ----------
 def main():
     st.set_page_config(page_title="飞行计划录入脚本生成器", layout="wide")
     st.title("✈️ 飞行计划录入脚本生成器")
