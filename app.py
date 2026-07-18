@@ -28,10 +28,6 @@ def process_excel(df, actype_mapping):
     flights = []
     df.columns = df.columns.str.strip()
     
-    st.write("📌 **读取到的列名：**", df.columns.tolist())
-    st.write("📌 **数据预览（前3行）：**")
-    st.dataframe(df.head(3))
-    
     required_cols = ['航班号', '飞机注册号', '用途', '出发日期', '计划出发', '预计到达', '出发地', '到达地']
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -216,9 +212,9 @@ def generate_js_script(flights):
         setValue('ARRAP_ADD$text', flight.arrap);
 
         console.log(`✅ 航班 ${{index+1}}/${{flights.length}} 已填充，请检查并点击“保存”。`);
-        console.log(`📌 保存完成后，在控制台输入 n 并回车继续。`);
+        console.log(`📌 保存完成后，在控制台输入 n() 并回车继续。`);
 
-        // 4. 等待用户输入 n
+        // 4. 等待用户输入 n()
         waitingForNext = true;
         await new Promise((resolve) => {{
             const check = setInterval(() => {{
@@ -233,7 +229,7 @@ def generate_js_script(flights):
         processFlight(index + 1);
     }}
 
-    console.log('🚀 脚本已启动。填充后请点击“保存”，然后输入 n 继续。');
+    console.log('🚀 脚本已启动。填充后请点击“保存”，然后输入 n() 继续。');
     processFlight(0);
 }})();
 """
@@ -249,24 +245,18 @@ def main():
     if uploaded_file is not None:
         try:
             df = pd.read_excel(uploaded_file, sheet_name=0, header=1)
-            st.subheader("📋 数据预览（前 10 行）")
-            st.dataframe(df.head(10))
-
             actype_mapping = build_actype_mapping()
             flights = process_excel(df, actype_mapping)
 
             if not flights:
-                st.error("❌ 未提取到任何有效航班数据，请根据上方列名提示检查 Excel 格式。")
+                st.error("❌ 未提取到任何有效航班数据，请检查 Excel 格式是否正确。")
             else:
                 st.success(f"✅ 成功提取 {len(flights)} 个航班记录。")
-                st.subheader("📌 解析后的航班列表")
-                st.dataframe(pd.DataFrame(flights))
-
+                
                 if st.button("🚀 生成 JavaScript 脚本"):
                     script = generate_js_script(flights)
                     st.subheader("📜 生成的脚本（复制到浏览器控制台运行）")
                     st.code(script, language="javascript")
-
                     st.download_button(
                         label="⬇️ 下载脚本（.js）",
                         data=script,
