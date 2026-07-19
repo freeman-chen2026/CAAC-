@@ -127,9 +127,18 @@ def generate_js_script(flights):
         }});
     }}
 
-    // 优化版 findButtonByText，优先通过类名定位
+    // 终极版 findButtonByText：使用多种策略，包括精确 XPath
     function findButtonByText(text) {{
-        // 1. 精准定位 mini-button-text
+        // 策略0：使用用户提供的精确 XPath（基于 /html/body/div[1]/div[2]/div/table/tbody/tr/td[1]/a[1]）
+        // 但更通用的 XPath 是：//a[contains(@class,'mini-button')]//span[text()='新增']
+        let xpathExpr = "//a[contains(@class,'mini-button')]//span[normalize-space()='{text}']/ancestor::a[contains(@class,'mini-button')]";
+        xpathExpr = xpathExpr.replace('{{text}}', text);
+        let result = document.evaluate(xpathExpr, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        if (result.singleNodeValue) {{
+            return result.singleNodeValue;
+        }}
+
+        // 策略1：精准定位 mini-button-text
         const spans = document.querySelectorAll('span.mini-button-text');
         for (let span of spans) {{
             if (span.innerText.trim() === text) {{
@@ -137,7 +146,7 @@ def generate_js_script(flights):
                 return btn;
             }}
         }}
-        // 2. 通用查找
+        // 策略2：通用查找
         const candidates = document.querySelectorAll('a, button, span, div, input[type="button"], input[type="submit"]');
         for (let el of candidates) {{
             let txt = el.innerText || el.textContent || el.value || '';
@@ -146,9 +155,9 @@ def generate_js_script(flights):
                 return btn;
             }}
         }}
-        // 3. XPath 兜底
+        // 策略3：宽泛 XPath
         const xpath = "//*[normalize-space(text())='" + text + "' or normalize-space(@value)='" + text + "']";
-        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         if (result.singleNodeValue) {{
             let el = result.singleNodeValue;
             return el.closest('a') || el.closest('button') || el;
@@ -186,17 +195,25 @@ def generate_js_script(flights):
         }}
         const flight = flights[index];
 
-        // 1. 点击“新增”
+        // 1. 点击“新增”（增加重试次数和延迟）
         let addBtn = null;
-        for (let attempt = 0; attempt < 5; attempt++) {{
+        for (let attempt = 0; attempt < 10; attempt++) {{
             addBtn = findButtonByText('新增');
             if (addBtn) break;
-            await new Promise(r => setTimeout(r, 300));
+            console.log(`⏳ 尝试 ${{attempt+1}}/10 查找“新增”按钮...`);
+            await new Promise(r => setTimeout(r, 500));
         }}
         if (!addBtn) {{
-            console.error('❌ 找不到“新增”按钮，停止执行。');
+            console.error('❌ 经过10次尝试仍找不到“新增”按钮，停止执行。');
+            console.log('💡 请确保页面已加载完成，且没有遮罩层。');
+            console.log('💡 您也可以手动点击“新增”后，在控制台输入 skip() 跳过此步（稍后实现）');
             return;
         }}
+        // 确保元素可见且可点击
+        try {{
+            addBtn.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+            await new Promise(r => setTimeout(r, 300));
+        }} catch (e) {{}}
         addBtn.click();
 
         // 2. 等待表单加载
