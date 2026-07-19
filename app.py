@@ -127,18 +127,16 @@ def generate_js_script(flights):
         }});
     }}
 
-    // 终极版 findButtonByText：使用多种策略，包括精确 XPath
+    // 终极版 findButtonByText：使用多种策略
     function findButtonByText(text) {{
-        // 策略0：使用用户提供的精确 XPath（基于 /html/body/div[1]/div[2]/div/table/tbody/tr/td[1]/a[1]）
-        // 但更通用的 XPath 是：//a[contains(@class,'mini-button')]//span[text()='新增']
-        let xpathExpr = "//a[contains(@class,'mini-button')]//span[normalize-space()='{text}']/ancestor::a[contains(@class,'mini-button')]";
-        xpathExpr = xpathExpr.replace('{{text}}', text);
+        // 策略0：使用精确 XPath（完全匹配您提供的结构）
+        let xpathExpr = "//a[contains(@class,'mini-button')]//span[normalize-space()='" + text + "']/ancestor::a[contains(@class,'mini-button')]";
         let result = document.evaluate(xpathExpr, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         if (result.singleNodeValue) {{
             return result.singleNodeValue;
         }}
 
-        // 策略1：精准定位 mini-button-text
+        // 策略1：通过 mini-button-text 类名
         const spans = document.querySelectorAll('span.mini-button-text');
         for (let span of spans) {{
             if (span.innerText.trim() === text) {{
@@ -206,7 +204,6 @@ def generate_js_script(flights):
         if (!addBtn) {{
             console.error('❌ 经过10次尝试仍找不到“新增”按钮，停止执行。');
             console.log('💡 请确保页面已加载完成，且没有遮罩层。');
-            console.log('💡 您也可以手动点击“新增”后，在控制台输入 skip() 跳过此步（稍后实现）');
             return;
         }}
         // 确保元素可见且可点击
