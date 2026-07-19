@@ -101,7 +101,6 @@ def generate_js_script(flights):
     const flights = {flights_json};
     let waitingForNext = false;
 
-    // 暴露全局 n 命令
     window.n = function() {{
         if (waitingForNext) {{
             waitingForNext = false;
@@ -110,7 +109,6 @@ def generate_js_script(flights):
             console.log('⏳ 没有等待中的航班，请先运行脚本。');
         }}
     }};
-    // 也支持 next()
     window.next = window.n;
 
     function waitForElement(id, timeout) {{
@@ -129,7 +127,17 @@ def generate_js_script(flights):
         }});
     }}
 
+    // 优化版 findButtonByText，优先通过类名定位
     function findButtonByText(text) {{
+        // 1. 精准定位 mini-button-text
+        const spans = document.querySelectorAll('span.mini-button-text');
+        for (let span of spans) {{
+            if (span.innerText.trim() === text) {{
+                let btn = span.closest('a') || span.closest('button') || span;
+                return btn;
+            }}
+        }}
+        // 2. 通用查找
         const candidates = document.querySelectorAll('a, button, span, div, input[type="button"], input[type="submit"]');
         for (let el of candidates) {{
             let txt = el.innerText || el.textContent || el.value || '';
@@ -138,6 +146,7 @@ def generate_js_script(flights):
                 return btn;
             }}
         }}
+        // 3. XPath 兜底
         const xpath = "//*[normalize-space(text())='" + text + "' or normalize-space(@value)='" + text + "']";
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         if (result.singleNodeValue) {{
@@ -253,7 +262,6 @@ def main():
             else:
                 st.success(f"✅ 成功提取 {len(flights)} 个航班记录。")
                 
-                # 直接生成并显示脚本，无需点击按钮
                 script = generate_js_script(flights)
                 st.subheader("📜 生成的脚本（复制到浏览器控制台运行）")
                 st.code(script, language="javascript")
